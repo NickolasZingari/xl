@@ -36,5 +36,18 @@ jobs:
       - name: Check Python syntax
         run: python -m py_compile main.py
 
-      - name: Run validation script test
-        run: python main.py
+      - name: Run validation test
+        run: |
+          python -c "
+          from openpyxl import Workbook
+          from main import apply_column_validation
+          wb = Workbook()
+          ws_main = wb.active
+          ws_main.title = 'Records'
+          ws_main.append(['Name', 'Status'])
+          ws_lists = wb.create_sheet('Lists')
+          ws_lists.append(['Status'])
+          ws_lists.append(['Active'])
+          wb.save('sample_validated.xlsx')
+          apply_column_validation('sample_validated.xlsx', 'Records', 'Lists')
+          "
