@@ -3,133 +3,103 @@ from openpyxl.utils import get_column_letter, quote_sheetname
 from openpyxl.worksheet.datavalidation import DataValidation
 
 
-def aplicar_validacao_por_coluna(
-    caminho_arquivo: str,
-    nome_aba_principal: str,
-    nome_aba_listas: str,
-    linha_cabecalho: int = 1,
-    linha_max_aplicacao: int = 1000,
+def apply_column_validation(
+    file_path: str,
+    main_sheet_name: str,
+    lists_sheet_name: str,
+    header_row: int = 1,
+    max_validation_row: int = 1000,
 ) -> None:
     """
-    Aplica validação de dados (lista suspensa) nas colunas da aba principal,
-    buscando automaticamente a coluna de mesmo nome na aba de listas.
+    Applies data validation (dropdown list) to columns in the main sheet
+    by automatically matching columns with the same header name in the lists sheet.
     """
-    wb = load_workbook(caminho_arquivo)
+    wb = load_workbook(file_path)
 
-    if nome_aba_principal not in wb.sheetnames:
-        raise ValueError(f"Aba principal '{nome_aba_principal}' não encontrada.")
-    if nome_aba_listas not in wb.sheetnames:
-        raise ValueError(f"Aba de listas '{nome_aba_listas}' não encontrada.")
+    if main_sheet_name not in wb.sheetnames:
+        raise ValueError(f"Main sheet '{main_sheet_name}' not found.")
+    if lists_sheet_name not in wb.sheetnames:
+        raise ValueError(f"Lists sheet '{lists_sheet_name}' not found.")
 
-    ws_principal = wb[nome_aba_principal]
-    ws_listas = wb[nome_aba_listas]
+    ws_main = wb[main_sheet_name]
+    ws_lists = wb[lists_sheet_name]
 
-    # 1. Mapear as colunas da aba de listas: { "nome_da_coluna": (indice_coluna, ultima_linha_preenchida) }
-    mapa_listas = {}
-    for col_idx in range(1, ws_listas.max_column + 1):
-        cabecalho = ws_listas.cell(row=linha_cabecalho, column=col_idx).value
-        if cabecalho is not None:
-            nome_normalizado = str(cabecalho).strip()
+    # 1. Map columns from the lists sheet: { "column_name": (col_index, last_filled_row) }
+    lists_map = {}
+    for col_idx in range(1, ws_lists.max_column + 1):
+        header = ws_lists.cell(row=header_row, column=col_idx).value
+        if header is not None:
+            normalized_name = str(header).strip()
 
-            # Descobrir até qual linha há dados preenchidos nessa coluna específica
-            ultima_linha = linha_cabecalho
-            for row_idx in range(ws_listas.max_row, linha_cabecalho, -1):
-                if ws_listas.cell(row=row_idx, column=col_idx).value is not None:
-                    ultima_linha = row_idx
+            # Find the last populated row in this specific column
+            last_row = header_row
+            for row_idx in range(ws_lists.max_row, header_row, -1):
+                if ws_lists.cell(row=row_idx, column=col_idx).value is not None:
+                    last_row = row_idx
                     break
 
-            # Só adiciona se houver pelo menos 1 item abaixo do cabeçalho
-            if ultima_linha > linha_cabecalho:
-                mapa_listas[nome_normalizado] = (col_idx, ultima_linha)
+            # Only include if there is at least 1 item below the header
+            if last_row > header_row:
+                lists_map[normalized_name] = (col_idx, last_row)
 
-    # Limpa validações anteriores da aba principal (opcional, evita duplicatas ao rodar novamente)
-    ws_principal.data_validations.dataValidation.clear()
+    # Clear existing validations in the main sheet to avoid duplicates on re-runs
+    ws_main.data_validations.dataValidation.clear()
 
-    # Nome da aba de listas formatado com aspas simples caso tenha espaços (ex: 'Base de Dados')
-    aba_listas_quoted = quote_sheetname(nome_aba_listas)
+    # Format sheet name with single quotes if it contains spaces (e.g., 'Lookup Lists')
+    quoted_lists_sheet = quote_sheetname(lists_sheet_name)
 
-    # 2. Percorrer as colunas da aba principal e criar a validação quando o nome coincidir
-    for col_idx in range(1, ws_principal.max_column + 1):
-        cabecalho_principal = ws_principal.cell(row=linha_cabecalho, column=col_idx).value
-        if cabecalho_principal is None:
+    # 2. Iterate through the main sheet columns and create validation when headers match
+    for col_idx in range(1, ws_main.max_column + 1):
+        main_header = ws_main.cell(row=header_row, column=col_idx).value
+        if main_header is None:
             continue
 
-        nome_coluna = str(cabecalho_principal).strip()
+        column_name = str(main_header).strip()
 
-        if nome_coluna in mapa_listas:
-            col_lista_idx, ultima_linha_lista = mapa_listas[nome_coluna]
-            letra_col_lista = get_column_letter(col_lista_idx)
-            letra_col_principal = get_column_letter(col_idx)
+        if column_name in lists_map:
+            list_col_idx, last_list_row = lists_map[column_name]
+            list_col_letter = get_column_letter(list_col_idx)
+            main_col_letter = get_column_letter(col_idx)
 
-            # Fórmula apontando para o intervalo exato daquela coluna na outra aba
-            # Exemplo: ='Listas'!$A$2:$A$15
-            formula_intervalo = (
-                f"={aba_listas_quoted}!${letra_col_lista}${linha_cabecalho + 1}:"
-                f"${letra_col_lista}${ultima_linha_lista}"
+            # Formula pointing to the exact range of that column in the lists sheet
+            # Example: ='Lists'!$A$2:$A$15
+            range_formula = (
+                f"={quoted_lists_sheet}!${list_col_letter}${header_row + 1}:"
+                f"${list_col_letter}${last_list_row}"
             )
 
             dv = DataValidation(
                 type="list",
-                formula1=formula_intervalo,
+                formula1=range_formula,
                 allow_blank=True,
             )
-            dv.errorTitle = "Valor inválido"
-            dv.error = f"Por favor, selecione um valor válido para '{nome_coluna}'."
-            dv.promptTitle = nome_coluna
-            dv.prompt = "Selecione um item da lista."
+            dv.errorTitle = "Invalid Value"
+            dv.error = f"Please select a valid value for '{column_name}'."
+            dv.promptTitle = column_name
+            dv.prompt = "Select an item from the list."
 
-            ws_principal.add_data_validation(dv)
+            ws_main.add_data_validation(dv)
 
-            # Intervalo na aba principal onde a validação será aplicada (ex: A2:A1000)
-            intervalo_destino = f"{letra_col_principal}{linha_cabecalho + 1}:{letra_col_principal}{linha_max_aplicacao}"
-            dv.add(intervalo_destino)
+            # Target range in the main sheet where validation will be applied (e.g., A2:A1000)
+            target_range = f"{main_col_letter}{header_row + 1}:{main_col_letter}{max_validation_row}"
+            dv.add(target_range)
 
             print(
-                f"[OK] Coluna '{nome_coluna}' ({intervalo_destino}) -> "
-                f"Lista em {formula_intervalo}"
+                f"[OK] Column '{column_name}' ({target_range}) -> "
+                f"List at {range_formula}"
             )
 
-    wb.save(caminho_arquivo)
-    print(f"\nArquivo salvo com sucesso em: {caminho_arquivo}")
-
-
-def criar_arquivo_exemplo(caminho_arquivo: str) -> None:
-    """Cria uma planilha de exemplo para testar a validação."""
-    wb = Workbook()
-
-    # Aba principal
-    ws_principal = wb.active
-    ws_principal.title = "Cadastro"
-    ws_principal.append(["Nome", "Departamento", "Status", "Prioridade"])
-
-    # Aba com as listas de validação (mesmos nomes das colunas que terão validação)
-    ws_listas = wb.create_sheet(title="Listas")
-    ws_listas.append(["Status", "Departamento", "Prioridade"])
-
-    dados_listas = [
-        ["Ativo", "Financeiro", "Alta"],
-        ["Inativo", "Tecnologia", "Média"],
-        ["Pendente", "RH", "Baixa"],
-        [None, "Comercial", None],
-        [None, "Operações", None],
-    ]
-    for linha in dados_listas:
-        ws_listas.append(linha)
-
-    wb.save(caminho_arquivo)
-
+    wb.save(file_path)
+    print(f"\nFile successfully saved at: {file_path}")
 
 if __name__ == "__main__":
-    arquivo = "teste.xlsx"
+    file_name = "sample_validated.xlsx"
 
-    # 1. Cria um arquivo de teste (remova se já tiver seu próprio arquivo .xlsx)
-    #criar_arquivo_exemplo(arquivo)
-
-    # 2. Aplica a validação relacionando os cabeçalhos das duas abas
-    aplicar_validacao_por_coluna(
-        caminho_arquivo=arquivo,
-        nome_aba_principal="Cadastro",
-        nome_aba_listas="Listas",
-        linha_cabecalho=1,
-        linha_max_aplicacao=500,
+    # 2. Apply data validation by matching headers across both sheets
+    apply_column_validation(
+        file_path=file_name,
+        main_sheet_name="Records",
+        lists_sheet_name="Lists",
+        header_row=1,
+        max_validation_row=500,
     )
