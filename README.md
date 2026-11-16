@@ -23,13 +23,13 @@ pip install openpyxl
 Run `main.py` pointing to your Excel file, specifying the target sheet name and the sheet containing the validation lists:
 
 ```python
-from main import aplicar_validacao_por_coluna
+from main import apply_column_validation
 
-aplicar_validacao_por_coluna(
-    caminho_arquivo="teste.xlsx",
-    nome_aba_principal="Cadastro",
-    nome_aba_listas="Listas",
-    linha_cabecalho=1,
-    linha_max_aplicacao=500,
+apply_column_validation(
+    file_path="sample_validated.xlsx",
+    main_sheet_name="Records",
+    lists_sheet_name="Lists",
+    header_row=1,
+    max_validation_row=500,
 )
 ```
